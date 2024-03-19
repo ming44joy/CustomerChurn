@@ -1,0 +1,521 @@
+---
+title: "hw3_p2_churn"
+author: "mswartz"
+output: html_document
+date: "2024-02-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This problem is based on one of [Kaggle's Playground Series of competitions](https://www.kaggle.com/docs/competitions). The Playground Series is a nice way to practice building predictive models by "providing interesting and approachable datasets for our community to practice their machine learning skills". 
+
+You do **NOT** need to download any data from Kaggle. I've created a smaller dataset with some other modifications for use in our HW problem. The datafile, `churn.csv`, is available in the `data` subfolder.
+
+This particular [playground dataset involves data about bank customers](https://www.kaggle.com/competitions/playground-series-s4e1) with the target variable being a binary indicator of whether or not the customer left the bank (`Exited`), or "churned". The playground dataset was constructed using another [Kaggle dataset on bank customer churn prediction](https://www.kaggle.com/datasets/shubhammeshram579/bank-customer-churn-prediction). Follow the preceeding link for information about the variables in this dataset. 
+
+This assignment will focus on building simple classification models for
+predicting bank customer churn. You'll be doing your work right in this R Markdown document. Feel free to save it first with a modified filename that includes your name. For example, mine would be **hw3_p2_churn_isken.Rmd**.
+
+You'll likely need a bunch of libraries. I've included a few here but you should add any others that you need. If you don't need some of these, feel free to delete such lines.
+
+```{r}
+library(dplyr)   # Group by analysis and other SQLish things.
+library(ggplot2) # Plotting, of course
+library(corrplot) # Correlation plots
+library(caret)   # Many aspects of predictive modeling
+library(skimr)  # An automated EDA tool 
+```
+**MAJOR (10%) HACKER EXTRA** Version control
+
+Create a new R Project for this assignment. Put the project under version control with git. Create a private GitHub repository for this project. Use git and GitHub as you go to do commits periodically and push them to your remote repository. After you have completed the assignment and pushed your last commit to your GitHub repo, add me as a Collaborator (my GitHub username is misken) so that I can see your repo.
+
+I cover use of git and GitHub with R Studio in this module on our course web page:
+
+* [http://www.sba.oakland.edu/faculty/isken/courses/mis5470_f23/git_intro.html](http://www.sba.oakland.edu/faculty/isken/courses/mis5470_f23/git_intro.html)
+
+This Hacker Extra is worth 10% of the total number of points in the assignment.
+
+## Step 1: Read in data
+
+Read the `churn.csv` file from the `data` subfolder into a dataframe named `churn`.
+
+```{r read_churn}
+library(readr)
+churn <- read.csv("C:/Users/ming4/OneDrive - oakland.edu/MyClasses/mis5470/hw3_part2_churn/hw3_part2_churn/data/churn.csv")
+View(churn)
+
+# This task gave me the most trouble. I spent days trying to read in the data. I was in the correct working directory but I still needed to use a direct path. Why? Help?
+```
+
+Use `str`, `summary`, and `skim` to get a sense of the data. 
+The binary target variable is `Exited` where 1 indicates that the customer left the bank (they "churned"). You'll notice that some of the fields are numeric and some are character data. You might also notice that there are fewer variables in our churn dataset than in the original Kaggle versions.
+
+```{r summary_churn}
+summary(churn)
+str(churn)
+skim(churn)
+
+```
+
+
+## Step 2: Factor conversions
+
+Some of the variables clearly should be factors. Change all of the variables to factors that you think should be. Include an explanation of why each of these variables should be converted to factors.
+
+```{r factor_conversions}
+churn$HasCrCard <-as.factor(churn$HasCrCard)
+churn$IsActiveMember <-as.factor(churn$IsActiveMember)
+churn$Exited <-as.factor(churn$Exited)
+churn$Geography <-as.factor(churn$Geography)
+churn$Gender <-as.factor(churn$Gender)
+churn$NumOfProducts <- as.factor(churn$NumOfProducts)
+
+```
+
+> I changed these variables to factors because they are categorical variables. Because geography only had three unique values, I thought it would be better to change that variable to a factor also. 
+
+## Step 3 - Partition into training and test sets
+
+We will use the [caret](https://topepo.github.io/caret/) package to do the partitioning of our data into training and test dataframes. Just run this chunk to create training and test datasets. This way we'll
+all be working with the same datasets. Notice that the test set is 20% of
+the full dataset.
+
+```{r partition}
+# Simple partition into train (80%) and test (20%) set 
+set.seed(687) # Do NOT change this
+trainIndex <- createDataPartition(churn$Exited, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+churn_train <- churn[as.vector(trainIndex), ]  
+churn_test <- churn[-as.vector(trainIndex), ]
+
+# rm(trainIndex) Remove this when you no longer need it!
+
+```
+
+Find the number of customers and the percentage of customers for the two `Exited` levels. You'll
+see that there are about 20% of the bank customers exited.
+
+```{r target_prop_check_train}
+table(churn_train$Exited)
+
+churn_train$Exited %>%
+  table() %>%
+  prop.table() * 100
+
+```
+
+
+## Step 4: EDA
+
+Do some EDA to try to uncover some relationships that may end up being
+useful in building a predictive model for `Exited`. You learned
+things in HW2 which should be useful here. You should **ONLY** use `churn_train` for your EDA. You should explore all of the variables.
+
+```{r histogram}
+ggplot(churn_train, aes(x = Age)) +
+  geom_histogram(fill = "purple", color = "black", bins = 30) +
+  labs(title = "Distribution of Age", x = "Age", y = "Frequency")
+
+ggplot(churn_train, aes(x = CreditScore)) +
+  geom_histogram(fill = "purple", color = "black", bins = 30) +
+  labs(title = "Distribution of Credit Score", x = "Age", y = "Frequency")
+        
+ggplot(churn_train, aes(x = Balance)) +
+  geom_histogram(fill = "purple", color = "black", bins = 30) +
+  labs(title = "Distribution of Balance", x = "Age", y = "Frequency")
+
+ggplot(churn_train, aes(x = EstimatedSalary)) +
+  geom_histogram(fill = "purple", color = "black", bins = 30) +
+  labs(title = "Distribution of Estimated Salary", x = "Age", y = "Frequency")
+
+```
+
+```{r barchart}
+ggplot(churn_train, aes(x = Tenure)) +
+  geom_bar(fill = "purple", color = "black") +
+  labs(title = "Distribution of Tenure", x = "Age", y = "Frequency") 
+
+ggplot(churn_train, aes(x = NumOfProducts)) +
+  geom_bar(fill = "purple", color = "black") +
+  labs(title = "Distribution of Number of Products", x = "Age", y = "Frequency")
+
+
+```
+
+
+
+```{r boxplot}
+ggplot(churn_train, aes(x = Exited, y = Age, fill = Exited)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Age by Exited", x = "Exited", y = "Age")
+
+ggplot(churn_train, aes(x = Exited, y = Balance, fill = Exited)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Balance by Exited", x = "Exited", y = "Age")
+
+ggplot(churn_train, aes(x = Exited, y = Tenure, fill = Exited)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Tenure by Exited", x = "Exited", y = "Age")
+
+
+```
+
+
+```{r violin}
+ggplot(churn_train, aes(x = Exited, y = Age, fill = Exited)) +
+  geom_violin() +
+  labs(title = "Violin Plot of Age by Exited", x = "Exited", y = "Age")
+
+ggplot(churn_train, aes(x = Exited, y = Balance, fill = Exited)) +
+  geom_violin() +
+  labs(title = "Violin Plot of Balance by Exited", x = "Exited", y = "Age")
+
+ggplot(churn_train, aes(x = Exited, y = Tenure, fill = Exited)) +
+  geom_violin() +
+  labs(title = "Violin Plot of Tenure by Exited", x = "Exited", y = "Age")
+
+
+```
+
+
+```{r table}
+print(table(churn_train$Gender, churn_train$Exited))
+
+print(table(churn_train$Geography, churn_train$Exited))
+
+print(table(churn_train$HasCrCard, churn_train$Exited))
+
+print(table(churn_train$IsActiveMember, churn_train$Exited))
+
+print(table(churn_train$NumOfProducts, churn_train$Exited))
+
+```
+
+
+```{r correlation}
+corrmat <- cor(churn_train[, c("CreditScore", "Age", "Tenure", "Balance", "EstimatedSalary")])
+
+corrplot::corrplot(corrmat)
+
+cor(churn_train[, c("CreditScore", "Age", "Tenure", "Balance", "EstimatedSalary")])
+```
+
+
+```{r scatterplot}
+ggplot(churn_train, aes(x = Age, y = Balance)) +
+  geom_point(color = "purple") +
+  labs(title = "Scatterplot of Age vs Balance", x = "Age", y = "Balance")
+
+ggplot(churn_train, aes(x = Age, y = EstimatedSalary)) +
+  geom_point(color = "magenta") +
+  labs(title = "Scatterplot of Age vs Estimated Salary", x = "Age", y = "Balance")
+
+ggplot(churn_train, aes(x = CreditScore, y = Balance)) +
+  geom_point(color = "cyan") +
+  labs(title = "Scatterplot of Credit Score vs Balance", x = "Age", y = "Balance")
+
+ggplot(churn_train, aes(x = CreditScore, y = EstimatedSalary)) +
+  geom_point(color = "yellow") +
+  labs(title = "Scatterplot of Credit Score vs Estimated Salary", x = "Age", y = "Balance")
+
+
+```
+
+
+## Step 5 - Building and evaluation of predictive classification models
+
+Now that you know a little more about the data, it's time to start building a
+few classification models for `Exited`. We will start out using overall prediction accuracy
+as our metric but we might want to consider other metrics.
+
+
+
+**QUESTION** Why might overall prediction accuracy not be the most appropriate metric to consider? What other
+metrics might be important and why?
+
+> Prediction accuracy can be misleading if the data is imbalanced. Metrics like precision, which measures the proportion of true positive predictions among all positive predictions made by the model, recall, which measures the proportion of true positive predictions among all actual positive instances, F1 Score is the harmonic mean of precision and recall, confusion matrix, which is a breakdown of the model's predictions by showing the number of true positives, false positives, true negatives, and false negatives.  ROC curve and AUC, which are useful for evaluating the model's ability to discriminate between classes
+
+
+### Fit a null model
+
+A very simple model would be to simply predict that `Exited` is equal to 0. On
+the training data we saw that we'd be ~80% accurate.
+
+Let's create this null model and run a confusion matrix on its "predictions" for both the training
+and the test data.
+
+```{r tree_null}
+# Create a vector of 0's
+model_train_null <- rep(0, nrow(churn_train))
+model_test_null <- rep(0, nrow(churn_test))
+
+cm_train_null <- caret::confusionMatrix(as.factor(model_train_null), churn_train$Exited, positive = "1")
+cm_train_null
+
+cm_test_null <- caret::confusionMatrix(as.factor(model_test_null), churn_test$Exited, positive = "1")
+cm_test_null
+```
+
+**QUESTION** A few questions:
+
+* Are you surprised that the performance of the null model is almost identical on test and train? Why or why not?
+* Explain the sensitivity and specificity values. 
+
+> Not surprised because the null model's lack of true positives leads to a sensitivity of 0. Since there are no true positive predictions and hence no positive cases correctly identified, the sensitivity value is 0 for both models.This indicates that neither null model successfully identified any of the positive cases in the dataset.Both null models predict all instances as negative (class 0). As a result, all negative cases are correctly identified as negative, leading to a perfect specificity score of 1 for both models. A specificity score of 1 indicates that none of the negative cases were incorrectly classified as positive. 
+
+So, as we begin fitting more complicated models, remember that we need to
+outperform the null model to make it worth it to use more complicated models.
+
+Now I'm going to ask you to fit three models:
+
+* a logistic regression model
+* a simple decision tree
+* a random forest
+
+We covered all three of these modeling techniques in the class notes.
+
+For each model type, you should:
+
+* fit the model on the training data,
+* assess the model's performance on the training data using the `confusionMatrix` function,
+* use the model to make predictions on the test data,
+* assess the model's performance on the test data using the `confusionMatrix` function,
+* discuss the results
+
+In your discussion of the results you should talk about things like:
+
+* how accurate is the model in predicting on the test data
+* is there evidence of overfitting?
+* how does the model do in terms of other metrics like sensitivity and specificity
+* other things you deem important.
+
+### Fit logistic regression models
+
+You'll start by creating a logistic regression model to predict `Exited`. Since there
+are not that many variables, let's use all of them. Here's a code skeleton to help you get started:
+
+**Hint**: There's an easy way to specify your model formula to include all of the predictor variables
+without typing out all the variable names. 
+
+```{r lr1_train}
+model_lr1 <- glm(Exited ~ ., 
+                 data = churn_train, family = binomial(link = "logit"))
+
+# Convert fitted model values to fitted classes. Use 0.5 as the
+#  threshold for classifying a case as a 1.
+
+class_train_lr1 <- as.factor(ifelse(predict(model_lr1, type = "response") > 0.5, 1, 0))
+                          
+cm_train_lr1 <- confusionMatrix(class_train_lr1, churn_train$Exited, positive = "1")
+
+cm_train_lr1
+
+```
+
+Now, let's predict on test data.
+
+```{r lr1_test}
+
+pred_lr1 <- predict(model_lr1, newdata = churn_test, type = "response")
+
+class_test_lr1 <- as.factor(ifelse(pred_lr1 > 0.5, 1, 0)) 
+                         
+cm_test_lr1 <- confusionMatrix(class_test_lr1, churn_test$Exited, positive="1")
+cm_test_lr1
+
+```
+
+**QUESTION** How did accuracy, sensitivity and specificity change when predicting on test data instead of the training data?
+
+>  Accuracy on the test data is slightly lower than on the training data, indicating that the model's performance is slightly worse when generalizing to unseen data. Sensitivity on the test data is slightly lower than on the training data, indicating that the model is slightly less effective at correctly identifying positive cases (Exited = 1) in the test dataset.specificity on the test data is quite similar to that on the training data, indicating that the model is still good at correctly identifying negative cases (Exited = 0) in the test dataset.
+
+Now change the threshold from 0.5 to 0.4 and create a new model using this new threshold. How does the sensitivity and specificity change as compared to our first logistic regression model? Explain why this happens?
+
+```{r increase_sensitivity}
+pred_lr1_new <- predict(model_lr1, newdata = churn_test, type = "response")
+
+class_test_lr1_new <- as.factor(ifelse(pred_lr1_new > 0.5, 1, 0)) 
+
+cm_test_lr1_new <- confusionMatrix(class_test_lr1_new, churn_test$Exited, positive="1")
+cm_test_lr1_new
+
+
+```
+
+> Sensitivity increases. The model becomes better at correctly identifying positive cases (Exited = 1). This means that fewer actual positive cases are classified as negative (false negatives), leading to a higher sensitivity. Specificity decreases. The model becomes less effective at correctly identifying negative cases (Exited = 0). This means that more actual negative cases are classified as positive (false positives), leading to a lower specificity. Lowering the threshold increases the likelihood of predicting positive cases, which can improve sensitivity but may also increase the number of false positives, leading to a decrease in specificity.
+
+
+### Fit simple decision tree model
+
+Now create a simple decision tree model to predict `Exited`. Again,
+use all the variables.
+
+```{r library_add}
+library(rpart)
+library(rpart.plot)
+```
+
+
+```{r tree1_train}
+model_tree1 <- train(Exited ~ ., data = churn_train, method = "rpart")
+
+class_train_tree1 <- predict(model_tree1, type = "raw")
+
+cm_train_tree1 <- confusionMatrix(class_train_tree1, churn_train$Exited, positive = "1")
+
+cm_train_tree1
+```
+
+Create a plot of your decision tree.
+
+```{r decision_tree_plot}
+rpart.plot(model_tree1$finalModel, box.palette = c("lightblue", "lightgreen"), shadow.col = "gray", nn = TRUE, extra = 100, cex = .8)
+```
+
+Explain the bottom left node of your tree. What conditions have to be true for a case to end up being classified by that node? What do those three numbers in the node mean? What does the color of the node mean?
+
+> For this tree, the color light blue represents "Exited". The bottom left node is 75% of the cases classified had an "Age" less than 43. The top number above the node represents the order the node split occurred. The middle number represents the class label (0, 1). The bottom number represents the percentage of observations in the dataset that are classified into that class (0, 1). 
+
+Now, let's predict on test data.
+
+```{r tree1_test}
+
+pred_tree1 <- predict(model_tree1, newdata = churn_test, type = "raw")
+
+cm_test_tree1 <- confusionMatrix(pred_tree1, churn_test$Exited, positive="1")
+cm_test_tree1
+
+```
+
+**QUESTION** How does the performance of the decision tree compare to your
+logistic regression model? 
+
+> The logistic regression model has a slightly higher accuracy and sensitivity compared to the decision tree model. However, the decision tree model has a higher specificity, indicating better performance in correctly identifying non-exited cases.The logistic regression model performs slightly better overall, the decision tree model may be more effective in correctly identifying non-exited cases.
+
+## Fit random forest model
+
+Finally, fit a random forest model.
+
+```{r random_forest}
+library(randomForest)
+
+```
+
+
+```{r rf1_train}
+# This didn't work! R was stuck on the first code line. I used print function as a "progress" message because the model was taking a long time to process. 
+
+# print("Fitting random forest model...")
+# rf1_train <- train(Exited ~ ., data = churn_train, method = "rf")
+# print("Generating predictions on training data...")
+# pred_train_rf1 <- predict(rf1_train, newdata = churn_train)
+# print("Creating confusion matrix...")
+# cm_train_rf1 <- confusionMatrix(pred_train_rf1, churn_train$Exited, positive="1")
+# cm_train_rf1
+
+rf1_train <- randomForest(Exited ~ ., data = churn_train)
+rf1_train
+
+rf1_train_conf_mat <- rf1_train$confusion
+
+accuracy <- sum(diag(rf1_train_conf_mat)) / sum(rf1_train_conf_mat)
+
+sensitivity <- rf1_train_conf_mat[2, 2] / sum(rf1_train_conf_mat[2, ])
+
+specificity <- rf1_train_conf_mat[1, 1] / sum(rf1_train_conf_mat[1, ])
+
+cat("Accuracy", accuracy, "\n")
+cat("Sensitivity", sensitivity, "\n")
+cat("Specificity", specificity, "\n")
+
+```
+
+Now, let's predict on test data.
+
+```{r rf1_test}
+rf1_test <- randomForest(Exited ~ ., data = churn_test)
+rf1_test
+
+rf1_test_conf_mat <- rf1_test$confusion
+
+accuracy <- sum(diag(rf1_test_conf_mat)) / sum(rf1_test_conf_mat)
+
+sensitivity <- rf1_test_conf_mat[2, 2] / sum(rf1_test_conf_mat[2, ])
+
+specificity <- rf1_test_conf_mat[1, 1] / sum(rf1_test_conf_mat[1, ])
+
+cat("Accuracy", accuracy, "\n")
+cat("Sensitivity", sensitivity, "\n")
+cat("Specificity", specificity, "\n")
+
+```
+
+
+**QUESTION** Summarize the performance of all three of your models (logistic, tree, random forest)? Is their evidence of overfitting in any of these model and what is your evidence for your answer? Add code chunks as needed.
+
+> The logisitic regression model shows consistent performance between training and testing datasets, indicating no significant overfitting. The decision tree model shows similar accuracy but lower sensitivity on the testing dataset compared to the training dataset, suggesting slight overfitting. The random forest model has slightly lower sensitivity on the testing dataset compared to the training dataset, indicating a minor overfitting. 
+
+
+**QUESTION** If you had to pick one to use in an actual financial environment, which model would you use and why? As a manager in charge of retention, what model performance metrics are you most interested in? What are the basic tradeoffs you see in terms of the initiatives you might undertake in response to such a model? For example, if you were really interested in reducing the number of customers exiting, maybe there are some things you might do to incent high risk (of exiting) customers to stay. Discuss.
+
+> I would choose the logisitic regression model because it's easy to interpret the coefficients, it's efficient (fast) and consistent performance. As a manager in charge of retention, the model performance metrics I would be interested in are sensitivity and specificity. The tradeoffs in implementing retention initiatives revolve around balancing the short-term costs of incentives with the long-term benefits of retaining customers. The bank could waive fees, make interest rate adjustments and offer rewards.  
+
+
+**HACKER EXTRA**
+
+Create a variable importance plot for your random forest to try to get a sense of which variables are most important in predicting customers likely to churn. Build another random forest using only the top 5 or so variables
+suggested by the importance plot. How does the performance of this reduced model compare to the original model?
+
+```{r importance}
+var_importance <- importance(rf1_test)
+var_importance
+
+varImpPlot(rf1_test, main = "Variable Importance Plot")
+
+```
+
+
+```{r rf_t5_train}
+rf_t5_train <- randomForest(Exited ~ Age + NumOfProducts + EstimatedSalary + CreditScore + Balance, data = churn_train)
+rf_t5_train
+
+cm_rf_t5_train <- rf_t5_train$confusion
+
+accuracy <- sum(diag(cm_rf_t5_train)) / sum(cm_rf_t5_train)
+
+sensitivity <- cm_rf_t5_train[2, 2] / sum(cm_rf_t5_train[2, ])
+
+specificity <- cm_rf_t5_train[1, 1] / sum(cm_rf_t5_train[1, ])
+
+cat("Accuracy", accuracy, "\n")
+cat("Sensitivity", sensitivity, "\n")
+cat("Specificity", specificity, "\n")
+
+```
+
+
+```{r rf_t5_test}
+rf_t5_test <- randomForest(Exited ~ Age + NumOfProducts + EstimatedSalary + CreditScore + Balance, data = churn_test)
+rf_t5_test
+
+cm_rf_t5_test <- rf_t5_test$confusion
+
+accuracy <- sum(diag(cm_rf_t5_test)) / sum(cm_rf_t5_test)
+
+sensitivity <- cm_rf_t5_test[2, 2] / sum(cm_rf_t5_test[2, ])
+
+specificity <- cm_rf_t5_test[1, 1] / sum(cm_rf_t5_test[1, ])
+
+cat("Accuracy", accuracy, "\n")
+cat("Sensitivity", sensitivity, "\n")
+cat("Specificity", specificity, "\n")
+```
+
+
+> The original random forest model performed slightly better than the top5 model for accuracy, sensitivity and specificity but the different in performance is close. 
